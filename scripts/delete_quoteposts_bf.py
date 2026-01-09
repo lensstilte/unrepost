@@ -47,14 +47,13 @@ def safe_call(fn, *args, **kwargs):
 
 def is_quote_post_record(rec) -> bool:
     """
-    rec is a listRecords item (pydantic model). It has .value which is the post record dict/model.
+    rec is a listRecords item (pydantic model).
     Quote-posts are posts with embed.record or embed.recordWithMedia.
     """
     val = getattr(rec, "value", None)
     if val is None:
         return False
 
-    # value may be dict or pydantic model
     if hasattr(val, "model_dump"):
         val = val.model_dump(mode="json")
 
@@ -113,7 +112,6 @@ def delete_quote_batch(client, did, max_actions, sleep_s):
             if not uri:
                 continue
 
-            # at://<did>/app.bsky.feed.post/<rkey>
             parts = uri.replace("at://", "").split("/")
             if len(parts) < 3:
                 continue
