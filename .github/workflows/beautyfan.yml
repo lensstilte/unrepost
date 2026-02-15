@@ -1,3 +1,5 @@
+env:
+  WORKFLOWS_DISABLED: true
 
   workflow_dispatch:
 
