@@ -1,14 +1,26 @@
 from atproto import Client
 import os
 import time
+from datetime import datetime, timezone
 
 COLLECTION = "app.bsky.feed.repost"
 PAGE_LIMIT = 100
 
 
-def list_repost_uris(client, did):
+def parse_created_at(value):
+    if not value:
+        return datetime.min.replace(tzinfo=timezone.utc)
+
+    try:
+        # Bluesky timestamps eindigen vaak op Z
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except Exception:
+        return datetime.min.replace(tzinfo=timezone.utc)
+
+
+def list_repost_records(client, did):
     cursor = None
-    uris = []
+    items = []
 
     while True:
         params = {
@@ -28,20 +40,36 @@ def list_repost_uris(client, did):
 
         for rec in records:
             uri = getattr(rec, "uri", None)
+            value = getattr(rec, "value", None)
+
+            created_at = None
+            if value is not None:
+                created_at = getattr(value, "created_at", None)
+                if created_at is None and isinstance(value, dict):
+                    created_at = value.get("createdAt") or value.get("created_at")
+
             if uri:
-                uris.append(uri)
+                items.append({
+                    "uri": uri,
+                    "created_at": created_at,
+                })
 
         if not cursor:
             break
 
-    return uris
+    # Oudste eerst
+    items.sort(key=lambda x: parse_created_at(x["created_at"]))
+    return items
 
 
-def delete_reposts(client, did, uris, sleep_s=0.3):
+def delete_reposts(client, did, items, sleep_s=0.3):
     deleted = 0
     failed = 0
 
-    for uri in uris:
+    for item in items:
+        uri = item["uri"]
+        created_at = item["created_at"]
+
         try:
             parts = uri.replace("at://", "").split("/")
             if len(parts) < 3:
@@ -55,6 +83,8 @@ def delete_reposts(client, did, uris, sleep_s=0.3):
                 print(f"⚠️ Skipping unexpected record: {uri}")
                 failed += 1
                 continue
+
+            print(f"🗑️ Deleting repost from {created_at or 'unknown date'}")
 
             client.com.atproto.repo.delete_record({
                 "repo": repo,
@@ -94,14 +124,18 @@ def main():
     print(f"✅ Logged in as: {username}")
     print(f"🆔 DID: {did}")
 
-    uris = list_repost_uris(client, did)
-    print(f"📊 Found repost-records: {len(uris)}")
+    items = list_repost_records(client, did)
+    print(f"📊 Found repost-records: {len(items)}")
 
-    if not uris:
+    if not items:
         print("✅ Nothing to delete.")
         return
 
-    deleted, failed = delete_reposts(client, did, uris, sleep_s=sleep_s)
+    if items:
+        print(f"⏮️ Oldest repost date: {items[0]['created_at']}")
+        print(f"⏭️ Newest repost date: {items[-1]['created_at']}")
+
+    deleted, failed = delete_reposts(client, did, items, sleep_s=sleep_s)
 
     print(f"🧹 Deleted total: {deleted}")
     print(f"⚠️ Failed total: {failed}")
