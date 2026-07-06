@@ -1,0 +1,23 @@
+name: Big Dominio Reposter
+
+on:
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+
+    env:
+      BSKY_USERNAME: ${{ secrets.BSKY_USERNAME }}
+      BSKY_PASSWORD: ${{ secrets.BSKY_PASSWORD }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install atproto
+
+      - run: python big_dominio_reposter.py
