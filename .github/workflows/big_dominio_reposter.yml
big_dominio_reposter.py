@@ -2,8 +2,6 @@ name: Big Dominio Reposter
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "27 * * * *"
 
 permissions:
   contents: read
