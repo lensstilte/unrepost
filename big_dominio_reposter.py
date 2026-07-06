@@ -5,7 +5,6 @@ from atproto import Client
 BSKY_USERNAME = os.getenv("BSKY_USERNAME")
 BSKY_PASSWORD = os.getenv("BSKY_PASSWORD")
 
-# Account waarvan je de laatste mediaposts wilt boosten
 TARGET_ACCOUNT = "big-dominio.bsky.social"
 
 MAX_POSTS = 10
@@ -23,11 +22,7 @@ def has_media(post):
         or str(type(embed))
     ).lower()
 
-    return (
-        "images" in embed_type
-        or "video" in embed_type
-        or "recordwithmedia" in embed_type
-    )
+    return "images" in embed_type or "video" in embed_type
 
 
 def is_quote_post(post):
@@ -41,32 +36,32 @@ def is_quote_post(post):
         or str(type(embed))
     ).lower()
 
-    return "record" in embed_type and "media" not in embed_type
+    return "record" in embed_type
 
 
 def get_last_target_media_posts(client):
-    profile = client.app.bsky.actor.get_profile(
-        {"actor": TARGET_ACCOUNT}
-    )
-    target_did = profile.did
+    target = client.app.bsky.actor.get_profile({"actor": TARGET_ACCOUNT})
+    target_did = target.did
 
     posts = []
     cursor = None
 
     while len(posts) < MAX_POSTS:
-        resp = client.app.bsky.feed.get_author_feed(
-            {
-                "actor": target_did,
-                "limit": 100,
-                "cursor": cursor,
-            }
-        )
+        feed = client.app.bsky.feed.get_author_feed({
+            "actor": target_did,
+            "limit": 100,
+            "cursor": cursor
+        })
 
-        for item in resp.feed:
+        for item in feed.feed:
             post = item.post
 
-            # Alleen eigen posts van target
+            # Alleen posts van target zelf
             if post.author.did != target_did:
+                continue
+
+            # Geen replies
+            if getattr(post.record, "reply", None):
                 continue
 
             # Geen quote posts
@@ -82,7 +77,7 @@ def get_last_target_media_posts(client):
             if len(posts) >= MAX_POSTS:
                 break
 
-        cursor = getattr(resp, "cursor", None)
+        cursor = getattr(feed, "cursor", None)
         if not cursor:
             break
 
@@ -91,76 +86,51 @@ def get_last_target_media_posts(client):
 
 def unrepost_if_exists(client, post, my_did):
     try:
-        reposted = client.app.bsky.feed.get_reposted_by(
-            {
-                "uri": post.uri,
-                "limit": 100,
-            }
-        )
+        reposted_by = client.app.bsky.feed.get_reposted_by({
+            "uri": post.uri,
+            "limit": 100
+        })
 
-        for user in reposted.reposted_by:
+        for user in reposted_by.reposted_by:
             if user.did == my_did:
-                try:
-                    client.delete_repost(post.uri)
-                    print(f"Unreposted: {post.uri}")
-                    time.sleep(1)
-                except Exception:
-                    pass
-                break
+                client.delete_repost(post.uri)
+                print(f"Unreposted: {post.uri}")
+                time.sleep(1)
+                return
 
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Unrepost check failed: {post.uri} | {e}")
 
 
 def repost_post(client, post):
     try:
-        client.repost(
-            uri=post.uri,
-            cid=post.cid,
-        )
+        client.repost(uri=post.uri, cid=post.cid)
         print(f"Reposted: {post.uri}")
+
     except Exception as e:
-        print(f"Repost failed: {e}")
+        print(f"Repost failed: {post.uri} | {e}")
 
 
 def main():
     if not BSKY_USERNAME or not BSKY_PASSWORD:
-        raise RuntimeError(
-            "Missing BSKY_USERNAME or BSKY_PASSWORD secrets."
-        )
+        raise RuntimeError("Missing BSKY_USERNAME or BSKY_PASSWORD")
 
     client = Client()
-    client.login(
-        BSKY_USERNAME,
-        BSKY_PASSWORD,
-    )
+    client.login(BSKY_USERNAME, BSKY_PASSWORD)
 
-    me = client.app.bsky.actor.get_profile(
-        {"actor": BSKY_USERNAME}
-    )
+    me = client.app.bsky.actor.get_profile({"actor": BSKY_USERNAME})
     my_did = me.did
 
     posts = get_last_target_media_posts(client)
 
-    print(
-        f"Found {len(posts)} media posts from {TARGET_ACCOUNT}"
-    )
-
-    # Oud -> nieuw zodat de nieuwste uiteindelijk bovenaan staat
+    # Oud naar nieuw, zodat nieuwste uiteindelijk bovenaan komt
     posts = list(reversed(posts))
 
+    print(f"Found {len(posts)} media posts from {TARGET_ACCOUNT}")
+
     for post in posts:
-        unrepost_if_exists(
-            client,
-            post,
-            my_did,
-        )
-
-        repost_post(
-            client,
-            post,
-        )
-
+        unrepost_if_exists(client, post, my_did)
+        repost_post(client, post)
         time.sleep(SLEEP_SECONDS)
 
 
