@@ -8,7 +8,7 @@ BSKY_PASSWORD = os.getenv("BSKY_PASSWORD")
 TARGET_ACCOUNT = "big-dominio.bsky.social"
 
 MAX_POSTS = 10
-SLEEP_SECONDS = 2
+SLEEP_SECONDS = 3
 
 
 def has_media(post):
